@@ -1,15 +1,27 @@
-import 'package:drift/drift.dart';
 import '../db/app_database.dart';
+import '../models/finance_tip.dart';
+import '../models/exchange_rate.dart';
 import '../services/api_service.dart';
 
+/// Repository that combines local database (Drift)
+/// and remote API (Dio)
 class FinanceRepository {
   final AppDatabase db;
   final ApiService apiService;
 
   FinanceRepository({required this.db, required this.apiService});
 
-  // DB methods
-  Stream<List<Transaction>> watchTransactions() => db.watchAllTransactions();
+  // -------------------------
+  // DATABASE
+  // -------------------------
+
+  Stream<List<Transaction>> watchTransactions() {
+    return db.watchAllTransactions();
+  }
+
+  Stream<Transaction> watchTransactionById(int id) {
+    return db.watchTransactionById(id);
+  }
 
   Future<void> addTransaction({
     required String title,
@@ -28,16 +40,42 @@ class FinanceRepository {
     );
   }
 
-  Future<void> deleteTransaction(int id) => db.deleteTransaction(id);
+  Future<void> updateTransaction({
+    required int id,
+    required String title,
+    required double amount,
+    required String type,
+    required String category,
+    required DateTime date,
+  }) async {
+    await db.updateTransaction(
+      id: id,
+      title: title,
+      amount: amount,
+      type: type,
+      category: category,
+      date: date,
+    );
+  }
 
-  // API methods
-  Future<List<String>> fetchFinanceTips() async {
-    try {
-      final data = await apiService.fetchFinanceTips();
-      // Map raw JSON -> list of strings
-      return data.take(5).map((e) => (e['title'] ?? '').toString()).toList();
-    } catch (e) {
-      rethrow;
-    }
+  Future<void> deleteTransaction(int id) async {
+    await db.deleteTransaction(id);
+  }
+
+  // -------------------------
+  // API - Finance Tips (Quotable)
+  // -------------------------
+  Future<List<FinanceTip>> getFinanceTips() async {
+    final raw = await apiService.fetchFinanceTips();
+    // Already limited in ApiService (limit: 6), but keep safe:
+    return raw.take(6).map((json) => FinanceTip.fromJson(json)).toList();
+  }
+
+  // -------------------------
+  // API - Exchange Rates (Frankfurter)
+  // -------------------------
+  Future<ExchangeRates> getExchangeRates({String base = 'EUR'}) async {
+    final json = await apiService.fetchExchangeRates(base: base);
+    return ExchangeRates.fromJson(json);
   }
 }

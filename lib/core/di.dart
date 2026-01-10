@@ -1,6 +1,10 @@
+import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 import 'package:dio/dio.dart';
+
 import '../db/app_database.dart';
+import '../providers/theme_provider.dart';
+import '../providers/transaction_provider.dart';
 import '../repositories/finance_repository.dart';
 import '../services/api_service.dart';
 
@@ -8,21 +12,13 @@ final getIt = GetIt.instance;
 
 Future<void> setupDI() async {
   // Dio
-  getIt.registerLazySingleton<Dio>(() => Dio(
-        BaseOptions(
-          baseUrl: 'https://jsonplaceholder.typicode.com', // or your API
-          connectTimeout: const Duration(seconds: 5),
-        ),
-      ));
+  getIt.registerLazySingleton<Dio>(() => Dio());
 
-  // API service
-  getIt.registerLazySingleton<ApiService>(
-    () => ApiService(getIt<Dio>()),
-  );
+  // Services
+  getIt.registerLazySingleton<ApiService>(() => ApiService(getIt<Dio>()));
 
-  // Drift DB
-  final db = AppDatabase();
-  getIt.registerLazySingleton<AppDatabase>(() => db);
+  // DB
+  getIt.registerLazySingleton<AppDatabase>(() => AppDatabase());
 
   // Repository
   getIt.registerLazySingleton<FinanceRepository>(
@@ -30,5 +26,11 @@ Future<void> setupDI() async {
       db: getIt<AppDatabase>(),
       apiService: getIt<ApiService>(),
     ),
+  );
+
+  // Providers
+  getIt.registerFactory<ThemeProvider>(() => ThemeProvider());
+  getIt.registerFactory<TransactionProvider>(
+    () => TransactionProvider(getIt<FinanceRepository>()),
   );
 }
