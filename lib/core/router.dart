@@ -3,10 +3,17 @@ import 'package:go_router/go_router.dart';
 import '../views/home/home_screen.dart';
 import '../views/transaction_edit/add_edit_transaction_screen.dart';
 import '../views/transaction_detail/transaction_detail_screen.dart';
+import '../views/rates/exchange_rates_screen.dart';
 
 final appRouter = GoRouter(
   initialLocation: '/',
   routes: [
+    GoRoute(
+      path: '/rates',
+      name: 'rates',
+      builder: (context, state) => const ExchangeRatesScreen(),
+    ),
+
     GoRoute(
       path: '/',
       name: 'home',
@@ -23,6 +30,16 @@ final appRouter = GoRouter(
       builder: (context, state) {
         final id = int.parse(state.pathParameters['id']!);
         return TransactionDetailScreen(id: id);
+      },
+    ),
+
+    // ✅ NEW: edit route
+    GoRoute(
+      path: '/transaction/:id/edit',
+      name: 'transactionEdit',
+      builder: (context, state) {
+        final id = int.parse(state.pathParameters['id']!);
+        return AddEditTransactionScreen(editId: id);
       },
     ),
   ],

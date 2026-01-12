@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'core/di.dart';
-import 'core/router.dart';
-import 'core/theme.dart';
-import 'providers/transaction_provider.dart';
-import 'repositories/finance_repository.dart';
-import 'providers/theme_provider.dart';
 
-void main() async {
+import 'core/di.dart';
+import 'core/router.dart'; // ✅ appRouter burada
+import 'core/theme.dart';
+
+import 'providers/theme_provider.dart';
+import 'providers/transaction_provider.dart';
+
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await setupDI();
-
   runApp(const FinanceApp());
 }
 
@@ -21,22 +21,18 @@ class FinanceApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(
-          create: (_) => ThemeProvider(),
-        ),
-        ChangeNotifierProvider(
-          create: (_) => TransactionProvider(getIt<FinanceRepository>()),
-        ),
+        ChangeNotifierProvider(create: (_) => getIt<ThemeProvider>()),
+        ChangeNotifierProvider(create: (_) => getIt<TransactionProvider>()),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) {
           return MaterialApp.router(
-            debugShowCheckedModeBanner: false,
             title: 'Personal Finance Tracker',
-            theme: lightTheme,
-            darkTheme: darkTheme,
-            themeMode: themeProvider.themeMode,
-            routerConfig: appRouter,
+            debugShowCheckedModeBanner: false,
+            routerConfig: appRouter, // ✅ FIX: buildRouter yok, appRouter var
+            theme: AppTheme.light(),
+            darkTheme: AppTheme.dark(),
+            themeMode: themeProvider.mode,
           );
         },
       ),
