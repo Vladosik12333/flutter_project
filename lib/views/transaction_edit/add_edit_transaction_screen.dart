@@ -23,6 +23,9 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
   bool _isIncome = false;
   String _category = 'Other';
 
+  // ✅ NEW: currency for this transaction
+  String _currency = 'EUR';
+
   bool _loading = false;
   bool _prefilling = false;
 
@@ -40,30 +43,27 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
   @override
   void initState() {
     super.initState();
-    if (_isEdit) {
-      _prefill();
-    }
+    if (_isEdit) _prefill();
   }
 
   Future<void> _prefill() async {
     setState(() => _prefilling = true);
     try {
       final repo = getIt<FinanceRepository>();
-
-      // Pull a single snapshot from the stream
       final Transaction tx = await repo
           .watchTransactionById(widget.editId!)
           .first;
 
       if (!mounted) return;
+
       _titleController.text = tx.title;
       _amountController.text = tx.amount.toStringAsFixed(2);
       _isIncome = tx.type == 'income';
       _category = _categories.contains(tx.category) ? tx.category : 'Other';
+      _currency = tx.currency;
 
       setState(() {});
     } catch (_) {
-      // If something goes wrong, show a small message but keep UI usable
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -84,7 +84,6 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
   }
 
   double _parseAmount(String raw) {
-    // Desktop users sometimes type "12,50"
     final normalized = raw.trim().replaceAll(',', '.');
     return double.parse(normalized);
   }
@@ -108,9 +107,8 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
           amount: amount,
           isIncome: _isIncome,
           category: _category,
-          // date: ???  -> Eğer provider/edit fonksiyonuna date eklediysen burada da göndeririz
-          date:
-              DateTime.now(), // Şimdilik; istersen mevcut tarihi DB’den alıp taşırız
+          currency: _currency,
+          date: DateTime.now(),
         );
       } else {
         await txProvider.addTransaction(
@@ -118,6 +116,7 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
           amount: amount,
           isIncome: _isIncome,
           category: _category,
+          currency: _currency,
         );
       }
 
@@ -135,6 +134,7 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final txProvider = context.watch<TransactionProvider>();
     final title = _isEdit ? 'Edit Transaction' : 'Add Transaction';
 
     return Scaffold(
@@ -182,6 +182,26 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
                         return null;
                       },
                     ),
+                    const SizedBox(height: 12),
+
+                    // ✅ NEW: Currency dropdown
+                    DropdownButtonFormField<String>(
+                      value: _currency,
+                      items: txProvider.supportedCurrencies
+                          .map(
+                            (c) => DropdownMenuItem(value: c, child: Text(c)),
+                          )
+                          .toList(),
+                      decoration: const InputDecoration(
+                        labelText: 'Currency',
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setState(() => _currency = value);
+                      },
+                    ),
+
                     const SizedBox(height: 12),
                     Row(
                       children: [

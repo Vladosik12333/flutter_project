@@ -1,8 +1,8 @@
-import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 import 'package:dio/dio.dart';
 
 import '../db/app_database.dart';
+import '../db/transactions_dao.dart';
 import '../providers/theme_provider.dart';
 import '../providers/transaction_provider.dart';
 import '../repositories/finance_repository.dart';
@@ -20,9 +20,15 @@ Future<void> setupDI() async {
   // DB
   getIt.registerLazySingleton<AppDatabase>(() => AppDatabase());
 
-  // Repository
+  // ✅ DAO
+  getIt.registerLazySingleton<TransactionsDao>(
+    () => TransactionsDao(getIt<AppDatabase>()),
+  );
+
+  // ✅ Repository uses DAO + DB + API
   getIt.registerLazySingleton<FinanceRepository>(
     () => FinanceRepository(
+      dao: getIt<TransactionsDao>(),
       db: getIt<AppDatabase>(),
       apiService: getIt<ApiService>(),
     ),

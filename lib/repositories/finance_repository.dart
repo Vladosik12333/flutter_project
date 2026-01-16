@@ -1,42 +1,45 @@
 import '../db/app_database.dart';
+import '../db/transactions_dao.dart';
 import '../models/finance_tip.dart';
 import '../models/exchange_rate.dart';
 import '../services/api_service.dart';
 
-/// Repository that combines local database (Drift)
-/// and remote API (Dio)
 class FinanceRepository {
-  final AppDatabase db;
-  final ApiService apiService;
+  final TransactionsDao dao; // ✅ DAO for CRUD
+  final AppDatabase db; // ✅ DB for settings + migrations
+  final ApiService apiService; // ✅ API
 
-  FinanceRepository({required this.db, required this.apiService});
+  FinanceRepository({
+    required this.dao,
+    required this.db,
+    required this.apiService,
+  });
 
   // -------------------------
-  // DATABASE
+  // SETTINGS
   // -------------------------
+  Future<String> getBaseCurrency() => db.getBaseCurrency();
+  Future<void> setBaseCurrency(String code) => db.setBaseCurrency(code);
 
-  Stream<List<Transaction>> watchTransactions() {
-    return db.watchAllTransactions();
-  }
-
-  Stream<Transaction> watchTransactionById(int id) {
-    return db.watchTransactionById(id);
-  }
+  // -------------------------
+  // DATABASE (via DAO)
+  // -------------------------
+  Stream<List<Transaction>> watchTransactions() => dao.watchAll();
+  Stream<Transaction> watchTransactionById(int id) => dao.watchById(id);
 
   Future<void> addTransaction({
     required String title,
     required double amount,
+    required String currency,
     required String type,
     required String category,
   }) async {
-    await db.insertTransaction(
-      TransactionsCompanion.insert(
-        title: title,
-        amount: amount,
-        type: type,
-        category: category,
-        date: DateTime.now(),
-      ),
+    await dao.insert(
+      title: title,
+      amount: amount,
+      currency: currency,
+      type: type,
+      category: category,
     );
   }
 
@@ -44,14 +47,16 @@ class FinanceRepository {
     required int id,
     required String title,
     required double amount,
+    required String currency,
     required String type,
     required String category,
     required DateTime date,
   }) async {
-    await db.updateTransaction(
+    await dao.updateOne(
       id: id,
       title: title,
       amount: amount,
+      currency: currency,
       type: type,
       category: category,
       date: date,
@@ -59,21 +64,17 @@ class FinanceRepository {
   }
 
   Future<void> deleteTransaction(int id) async {
-    await db.deleteTransaction(id);
+    await dao.deleteOne(id);
   }
 
   // -------------------------
-  // API - Finance Tips (Quotable)
+  // API
   // -------------------------
   Future<List<FinanceTip>> getFinanceTips() async {
     final raw = await apiService.fetchFinanceTips();
-    // Already limited in ApiService (limit: 6), but keep safe:
     return raw.take(6).map((json) => FinanceTip.fromJson(json)).toList();
   }
 
-  // -------------------------
-  // API - Exchange Rates (Frankfurter)
-  // -------------------------
   Future<ExchangeRates> getExchangeRates({String base = 'EUR'}) async {
     final json = await apiService.fetchExchangeRates(base: base);
     return ExchangeRates.fromJson(json);

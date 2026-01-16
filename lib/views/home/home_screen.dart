@@ -6,6 +6,7 @@ import '../../providers/theme_provider.dart';
 import '../../providers/transaction_provider.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/charts/expense_bar_chart.dart';
+import '../../widgets/charts/month_donut_chart.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -19,9 +20,10 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
 
-    // Load exchange data once (after first build)
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<TransactionProvider>().loadExchangeRates(base: 'EUR');
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final p = context.read<TransactionProvider>();
+      await p.loadBaseCurrency();
+      await p.loadExchangeRates(base: p.baseCurrency);
     });
   }
 
@@ -30,19 +32,39 @@ class _HomeScreenState extends State<HomeScreen> {
     final txProvider = context.watch<TransactionProvider>();
     final themeProvider = context.watch<ThemeProvider>();
 
-    // Transactions list filtered (Today/Week/Month/All)
-    final txs = txProvider.filteredTransactions;
+    final monthTxs = txProvider.thisMonthTransactions;
+    final recentThisMonth = monthTxs.take(8).toList();
+
+    final isLoading = txProvider.state == TransactionViewState.loading;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Personal Finance Tracker'),
         actions: [
+          DropdownButtonHideUnderline(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: DropdownButton<String>(
+                value: txProvider.baseCurrency,
+                items: txProvider.supportedCurrencies
+                    .map(
+                      (c) =>
+                          DropdownMenuItem(value: c, child: Text('Base: $c')),
+                    )
+                    .toList(),
+                onChanged: (v) {
+                  if (v == null) return;
+                  context.read<TransactionProvider>().setBaseCurrency(v);
+                },
+              ),
+            ),
+          ),
           IconButton(
             tooltip: 'Refresh FX',
             icon: const Icon(Icons.refresh),
             onPressed: () => context
                 .read<TransactionProvider>()
-                .loadExchangeRates(base: 'EUR'),
+                .loadExchangeRates(base: txProvider.baseCurrency),
           ),
           IconButton(
             tooltip: themeProvider.isDark ? 'Light mode' : 'Dark mode',
@@ -76,67 +98,65 @@ class _HomeScreenState extends State<HomeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   // =========================
-                  // DASHBOARD GRID (3 CARDS)
+                  // TOP ROW (KPIs + MINI BAR)
                   // =========================
-                  // TOP DASHBOARD
-                  LayoutBuilder(
-                    builder: (context, c) {
-                      final isWide = c.maxWidth >= 1100;
-
-                      if (isWide) {
-                        return DashboardTopRow(
-                          income: txProvider.totalIncome,
-                          expense: txProvider.totalExpense,
-                          balance: txProvider.balance,
-                        );
-                      }
-
-                      // Narrow layout (stack)
-                      return Column(
-                        children: [
-                          _KpiCard(
-                            title: 'Income',
-                            value: txProvider.totalIncome,
-                            icon: Icons.trending_up,
-                            accent: Colors.green,
-                          ),
-                          const SizedBox(height: 12),
-                          _KpiCard(
-                            title: 'Expenses',
-                            value: txProvider.totalExpense,
-                            icon: Icons.trending_down,
-                            accent: Colors.red,
-                          ),
-                          const SizedBox(height: 12),
-                          _KpiCard(
-                            title: 'Balance',
-                            value: txProvider.balance,
-                            icon: Icons.account_balance_wallet_outlined,
-                            accent: Colors.teal,
-                          ),
-                          const SizedBox(height: 16),
-                          const _MiniChartCard(),
-                        ],
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 16),
+                  if (isWide)
+                    DashboardTopRow(
+                      income: txProvider.monthIncome,
+                      expense: txProvider.monthExpense,
+                      balance: txProvider.monthBalance,
+                      currency: txProvider.baseCurrency,
+                    )
+                  else
+                    Column(
+                      children: [
+                        _KpiCard(
+                          title: 'Income (This Month)',
+                          value: txProvider.monthIncome,
+                          currency: txProvider.baseCurrency,
+                          icon: Icons.trending_up,
+                          accent: Colors.green,
+                        ),
+                        const SizedBox(height: 12),
+                        _KpiCard(
+                          title: 'Expenses (This Month)',
+                          value: txProvider.monthExpense,
+                          currency: txProvider.baseCurrency,
+                          icon: Icons.trending_down,
+                          accent: Colors.red,
+                        ),
+                        const SizedBox(height: 12),
+                        _KpiCard(
+                          title: 'Balance (This Month)',
+                          value: txProvider.monthBalance,
+                          currency: txProvider.baseCurrency,
+                          icon: Icons.account_balance_wallet_outlined,
+                          accent: Colors.teal,
+                        ),
+                        const SizedBox(height: 16),
+                        const _MiniChartCard(),
+                      ],
+                    ),
 
                   const SizedBox(height: 16),
 
                   // =========================
-                  // CHART CARD
+                  // ✅ NEW: DONUT / CIRCLE CHART
                   // =========================
                   AppCard(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Text(
-                          'Spending by Category',
+                          'Monthly Breakdown',
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
                         const SizedBox(height: 12),
-                        ExpenseBarChart(transactions: txProvider.transactions),
+                        MonthDonutChart(
+                          income: txProvider.monthIncome,
+                          expense: txProvider.monthExpense,
+                          currency: txProvider.baseCurrency,
+                        ),
                       ],
                     ),
                   ),
@@ -144,10 +164,29 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 16),
 
                   // =========================
-                  // LIVE EXCHANGE DATA (NOT "TIPS")
+                  // SPENDING BY CATEGORY (THIS MONTH) ✅ converted in bar chart
+                  // =========================
+                  AppCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          'Spending by Category (This Month)',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 12),
+                        ExpenseBarChart(transactions: monthTxs),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // =========================
+                  // LIVE EXCHANGE DATA
                   // =========================
                   SizedBox(
-                    height: 320,
+                    height: 240,
                     child: AppCard(
                       child: _MarketSnapshot(provider: txProvider),
                     ),
@@ -156,38 +195,37 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 16),
 
                   // =========================
-                  // TRANSACTIONS HEADER + FILTER
+                  // RECENT TRANSACTIONS (THIS MONTH) + VIEW ALL
                   // =========================
                   Row(
                     children: [
                       Expanded(
                         child: Text(
-                          'Transactions',
+                          'Recent Transactions (This Month)',
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
                       ),
-                      _FilterChips(
-                        current: txProvider.filter,
-                        onChanged: (f) =>
-                            context.read<TransactionProvider>().setFilter(f),
+                      TextButton.icon(
+                        onPressed: () => context.pushNamed('transactionsAll'),
+                        icon: const Icon(Icons.list_alt),
+                        label: const Text('View All'),
                       ),
                     ],
                   ),
                   const SizedBox(height: 10),
 
-                  // =========================
-                  // TRANSACTIONS LIST
-                  // =========================
-                  if (txProvider.state == TransactionViewState.loading)
+                  if (isLoading)
                     const Padding(
                       padding: EdgeInsets.all(24.0),
                       child: Center(child: CircularProgressIndicator()),
                     )
-                  else if (txs.isEmpty)
+                  else if (recentThisMonth.isEmpty)
                     const Padding(
                       padding: EdgeInsets.all(24.0),
                       child: Center(
-                        child: Text('No transactions yet. Tap + to add one.'),
+                        child: Text(
+                          'No transactions this month yet. Tap + to add one.',
+                        ),
                       ),
                     )
                   else
@@ -196,11 +234,16 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: ListView.separated(
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
-                        itemCount: txs.length,
+                        itemCount: recentThisMonth.length,
                         separatorBuilder: (_, __) => const Divider(height: 1),
                         itemBuilder: (context, index) {
-                          final t = txs[index];
+                          final t = recentThisMonth[index];
                           final isIncome = t.type == 'income';
+
+                          final converted = txProvider.convertToBase(
+                            t.amount,
+                            t.currency,
+                          );
 
                           return ListTile(
                             onTap: () => context.pushNamed(
@@ -217,12 +260,23 @@ class _HomeScreenState extends State<HomeScreen> {
                             subtitle: Text(
                               '${t.category} • ${_dateShort(t.date)}',
                             ),
-                            trailing: Text(
-                              '${isIncome ? '+' : '-'} ${t.amount.toStringAsFixed(2)}',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                color: isIncome ? Colors.green : Colors.red,
-                              ),
+                            trailing: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  '${isIncome ? '+' : '-'} ${converted.toStringAsFixed(2)} ${txProvider.baseCurrency}',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    color: isIncome ? Colors.green : Colors.red,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '(${t.amount.toStringAsFixed(2)} ${t.currency})',
+                                  style: Theme.of(context).textTheme.labelSmall,
+                                ),
+                              ],
                             ),
                           );
                         },
@@ -237,44 +291,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  static Widget _summaryCard({
-    required String title,
-    required double value,
-    required IconData icon,
-    required Color color,
-  }) {
-    return AppCard(
-      child: Row(
-        children: [
-          Icon(icon, size: 26),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: const TextStyle(fontSize: 13)),
-                const SizedBox(height: 6),
-                Text(
-                  value.toStringAsFixed(2),
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: color,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  static String _dateShort(DateTime d) {
-    final s = d.toLocal().toString();
-    return s.split(' ').first;
-  }
+  static String _dateShort(DateTime d) =>
+      d.toLocal().toString().split(' ').first;
 }
 
 // =========================
@@ -318,7 +336,7 @@ class _MarketSnapshot extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                'Live Exchange Data',
+                'Live Exchange Data (Base: ${rates.base})',
                 style: Theme.of(context).textTheme.titleMedium,
               ),
             ),
@@ -329,7 +347,6 @@ class _MarketSnapshot extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 12),
-
         Expanded(
           child: GridView.builder(
             itemCount: items.length,
@@ -376,113 +393,64 @@ class _MarketSnapshot extends StatelessWidget {
   }
 }
 
-// =========================
-// FILTER CHIPS
-// =========================
-class _FilterChips extends StatelessWidget {
-  final TxFilter current;
-  final ValueChanged<TxFilter> onChanged;
-
-  const _FilterChips({required this.current, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 8,
-      children: [
-        ChoiceChip(
-          label: const Text('All'),
-          selected: current == TxFilter.all,
-          onSelected: (_) => onChanged(TxFilter.all),
-        ),
-        ChoiceChip(
-          label: const Text('Today'),
-          selected: current == TxFilter.today,
-          onSelected: (_) => onChanged(TxFilter.today),
-        ),
-        ChoiceChip(
-          label: const Text('This Week'),
-          selected: current == TxFilter.week,
-          onSelected: (_) => onChanged(TxFilter.week),
-        ),
-        ChoiceChip(
-          label: const Text('This Month'),
-          selected: current == TxFilter.month,
-          onSelected: (_) => onChanged(TxFilter.month),
-        ),
-      ],
-    );
-  }
-}
-
 class DashboardTopRow extends StatelessWidget {
   final double income;
   final double expense;
   final double balance;
+  final String currency;
 
   const DashboardTopRow({
     super.key,
     required this.income,
     required this.expense,
     required this.balance,
+    required this.currency,
   });
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, c) {
-        final isWide = c.maxWidth >= 1100;
-
-        if (isWide) {
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          flex: 7,
+          child: Row(
             children: [
               Expanded(
-                flex: 7,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _KpiCard(
-                        title: 'Income',
-                        value: income,
-                        icon: Icons.trending_up,
-                        accent: Colors.green,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _KpiCard(
-                        title: 'Expenses',
-                        value: expense,
-                        icon: Icons.trending_down,
-                        accent: Colors.red,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _KpiCard(
-                        title: 'Balance',
-                        value: balance,
-                        icon: Icons.account_balance_wallet_outlined,
-                        accent: Colors.teal,
-                      ),
-                    ),
-                  ],
+                child: _KpiCard(
+                  title: 'Income (This Month)',
+                  value: income,
+                  currency: currency,
+                  icon: Icons.trending_up,
+                  accent: Colors.green,
                 ),
               ),
-              const SizedBox(width: 16),
-              Expanded(flex: 5, child: _MiniChartCard()),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _KpiCard(
+                  title: 'Expenses (This Month)',
+                  value: expense,
+                  currency: currency,
+                  icon: Icons.trending_down,
+                  accent: Colors.red,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _KpiCard(
+                  title: 'Balance (This Month)',
+                  value: balance,
+                  currency: currency,
+                  icon: Icons.account_balance_wallet_outlined,
+                  accent: Colors.teal,
+                ),
+              ),
             ],
-          );
-        }
-
-        // Not wide (stack)
-        return Column(
-          children: const [
-            // We'll pass values via constructor in usage below
-          ],
-        );
-      },
+          ),
+        ),
+        const SizedBox(width: 16),
+        const Expanded(flex: 5, child: _MiniChartCard()),
+      ],
     );
   }
 }
@@ -490,19 +458,20 @@ class DashboardTopRow extends StatelessWidget {
 class _KpiCard extends StatelessWidget {
   final String title;
   final double value;
+  final String currency;
   final IconData icon;
   final Color accent;
 
   const _KpiCard({
     required this.title,
     required this.value,
+    required this.currency,
     required this.icon,
     required this.accent,
   });
 
   @override
   Widget build(BuildContext context) {
-    // Using your AppCard helper
     return AppCard(
       child: Row(
         children: [
@@ -523,7 +492,7 @@ class _KpiCard extends StatelessWidget {
                 Text(title, style: Theme.of(context).textTheme.bodySmall),
                 const SizedBox(height: 6),
                 Text(
-                  value.toStringAsFixed(2),
+                  '${value.toStringAsFixed(2)} $currency',
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.w800,
                     color: accent,
@@ -550,11 +519,11 @@ class _MiniChartCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Spending Overview',
+            'Spending Overview (This Month)',
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 12),
-          ExpenseBarChart(transactions: txProvider.transactions),
+          ExpenseBarChart(transactions: txProvider.thisMonthTransactions),
         ],
       ),
     );

@@ -1,6 +1,8 @@
-// lib/widgets/charts/expense_bar_chart.dart
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
 import '../../db/app_database.dart';
+import '../../providers/transaction_provider.dart';
 
 class ExpenseBarChart extends StatelessWidget {
   final List<Transaction> transactions;
@@ -9,79 +11,63 @@ class ExpenseBarChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Group expenses by category
-    final Map<String, double> data = {};
-    for (final t in transactions.where((t) => t.type == 'expense')) {
-      data[t.category] = (data[t.category] ?? 0) + t.amount;
+    final p = context.watch<TransactionProvider>();
+
+    // ✅ Only expenses
+    final expenses = transactions.where((t) => t.type == 'expense').toList();
+
+    // ✅ Group by category in BASE currency
+    final Map<String, double> byCategory = {};
+    for (final t in expenses) {
+      final amountBase = p.convertToBase(t.amount, t.currency);
+      byCategory[t.category] = (byCategory[t.category] ?? 0) + amountBase;
     }
 
-    if (data.isEmpty) {
-      return Container(
-        height: 120,
-        alignment: Alignment.center,
-        child: const Text('No expenses yet to display chart.'),
-      );
+    if (byCategory.isEmpty) {
+      return const Center(child: Text('No expense data'));
     }
 
-    final maxValue = data.values.reduce((a, b) => a > b ? a : b);
+    final entries = byCategory.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
 
-    return SizedBox(
-      height: 150,
-      child: ListView(
-        children: data.entries.map((entry) {
-          final label = entry.key;
-          final value = entry.value;
-          final fraction = maxValue == 0 ? 0.0 : value / maxValue;
+    final maxValue = entries.first.value == 0 ? 1.0 : entries.first.value;
 
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 80,
-                  child: Text(
-                    label,
-                    style: const TextStyle(fontSize: 12),
-                  ),
+    return Column(
+      children: entries.map((e) {
+        final ratio = (e.value / maxValue).clamp(0.0, 1.0);
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 110,
+                child: Text(
+                  e.key,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Stack(
-                    children: [
-                      Container(
-                        height: 14,
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade300,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      FractionallySizedBox(
-                        widthFactor: fraction,
-                        child: Container(
-                          height: 14,
-                          decoration: BoxDecoration(
-                            color: Colors.teal,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: LinearProgressIndicator(value: ratio, minHeight: 10),
                 ),
-                const SizedBox(width: 8),
-                SizedBox(
-                  width: 60,
-                  child: Text(
-                    value.toStringAsFixed(0),
-                    textAlign: TextAlign.right,
-                    style: const TextStyle(fontSize: 12),
-                  ),
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                width: 90,
+                child: Text(
+                  '${e.value.toStringAsFixed(0)} ${p.baseCurrency}',
+                  textAlign: TextAlign.right,
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
-              ],
-            ),
-          );
-        }).toList(),
-      ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
     );
   }
 }
